@@ -1,18 +1,6 @@
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.layers import Reshape
-from keras.layers.core import Activation
-from keras.layers.normalization import BatchNormalization
-from keras.layers.convolutional import UpSampling2D
-from keras.layers.convolutional import Conv2D, MaxPooling2D
-from keras.layers.advanced_activations import LeakyReLU, ELU
-from keras.layers.core import Flatten
-from keras.layers import Dropout
-from keras.optimizers import SGD
+from keras.optimizers import SGD, RMSprop
 from keras.datasets import mnist
 import numpy as np
-import keras.backend as K
-import tensorflow as tf
 from model import *
 from PIL import Image
 import math
@@ -22,24 +10,26 @@ BATCH_SIZE = 256
 
 #prepare for the training data
 (X_train, y_train), (X_test, y_test) = mnist.load_data()
-X_train = (X_train.astype(np.float32) - 127.5)/127.5
+X_train = X_train.astype(np.float32) / 255
 X_train = X_train.reshape((X_train.shape[0], 28, 28, 1))
 
 d = discriminator()
 g = generator()
 dcgan = GAN(g,d)
-d_optim = SGD(lr=0.0005, momentum=0.9, nesterov=True)
-g_optim = SGD(lr=0.0005, momentum=0.9, nesterov=True)
-g.compile(loss='binary_crossentropy', optimizer="SGD")
-dcgan.compile(loss='binary_crossentropy', optimizer=g_optim)
+#d_optim = SGD(lr=0.0005, momentum=0.9, nesterov=True)
+#g_optim = SGD(lr=0.0005, momentum=0.9, nesterov=True)
+d_optim = RMSprop(lr=0.0002, decay=6e-8)
+g_optim = RMSprop(lr=0.0001, decay=3e-8)
+g.compile(loss='binary_crossentropy', optimizer=g_optim , metrics=['accuracy'])
+dcgan.compile(loss='binary_crossentropy', optimizer=g_optim , metrics=['accuracy'])
 d.trainable = True
-d.compile(loss='binary_crossentropy', optimizer=d_optim)
+d.compile(loss='binary_crossentropy', optimizer=d_optim , metrics=['accuracy'])
 
 
 noise = np.zeros((BATCH_SIZE, 100))
 
-
-for epoch in range(200):
+print("done")
+for epoch in range(100):
     for index in range(int(X_train.shape[0]/BATCH_SIZE)):
         for i in range(BATCH_SIZE):
             noise[i, :] = np.random.normal(0, 0.5, 100)   #initialize the noise
@@ -54,13 +44,13 @@ for epoch in range(200):
             X = generated_images
             y = [0] * BATCH_SIZE
         d_loss = d.train_on_batch(X, y)
-        print("epoch %d batch %d d_loss : %f" % (epoch, index, d_loss))
+        print(epoch, index, d_loss)
         for i in range(BATCH_SIZE):
             noise[i, :] = np.random.normal(0, 0.5, 100)
         discriminator.trainable = False
         g_loss = dcgan.train_on_batch(noise, [1] * BATCH_SIZE)
         discriminator.trainable = True
-        print("epoch %d batch %d g_loss : %f" % (epoch, index, g_loss))
+        print(epoch, index, g_loss)
         if index % 10 == 9:
             g.save_weights('generator', True)
             d.save_weights('discriminator', True)
@@ -85,7 +75,8 @@ def combine_images(generated_images):
 #generate images after training
 def generate_images(BATCH_SIZE, nice=False):
     g = generator()
-    g.compile(loss='binary_crossentropy', optimizer="SGD")
+    g_optim = RMSprop(lr=0.0001, decay=3e-8)
+    g.compile(loss='binary_crossentropy', optimizer=g_optim)
     g.load_weights('generator')
     if nice:
         d = discriminator()
@@ -108,7 +99,7 @@ def generate_images(BATCH_SIZE, nice=False):
         noise = np.random.uniform(-1, 1, (BATCH_SIZE, 100))
         generated_images = g.predict(noise, verbose=1)
         image = combine_images(generated_images)
-    image = image*127.5+127.5
+    image = image*255
     Image.fromarray(image.astype(np.uint8)).save("generated_image.png")
 
 
